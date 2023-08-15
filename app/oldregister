@@ -1,0 +1,1083 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Mail;
+use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use App\Models\User;
+use App\Models\settings;
+
+use App\Models\Registered;
+use App\Models\EvulatorUser;
+use App\Models\RefreeUser;
+use App\Models\season;
+use App\Models\temp;
+
+use App\Models\FinalResult;
+use DB;
+use Auth;
+use Session;
+use Storage;
+use DataTables;
+use function PHPUnit\Framework\isEmpty;
+
+class RegisterController extends Controller
+{
+public function __construct()
+{
+
+$this->season=0;}
+
+/**
+* RegisterController constructor.
+*/
+
+public function settings()
+{   $temp=settings::all();
+ return view('admin.settings',['user'=>$temp[0],'seasons'=>season::all()]);
+}
+    public function updatsettings(Request $request)
+    {
+        $setting=settings::findorfail($request->id);
+if($request->rate==null)
+{
+    $setting->activeseason=$request->active;
+    $setting->save();
+}else{
+    $setting->therate=$request->rate;
+    $setting->save();
+
+}
+    }
+
+
+
+public function checkseason1($id)
+{         DB::table('temps')->delete();
+$temp1=new temp();
+
+if (\Illuminate\Support\Facades\Auth::user()->type==1)
+$temp1->season_id= $id;
+else{
+return   $temp1->season_id =\Illuminate\Support\Facades\Auth::user()->season;
+}
+$temp1->save();
+$temp2=temp::all();
+return $temp2[0]->season_id;
+} public function checkseason(Request $request)
+{
+if (\Illuminate\Support\Facades\Auth::user()->type==1)
+return   $season=$request->season;
+else{
+return    $season=\Illuminate\Support\Facades\Auth::user()->season;
+}
+}
+
+
+public function get_registered($regStatus,Request $request){
+
+
+
+
+$seasons=season::all();
+
+if($regStatus == 'all'){
+    if(Auth::user()->type == 1 || Auth::user()->type == 3)
+        return view('admin.registered.index',compact('seasons'));
+}
+
+if($regStatus == 'accept'){
+    if(Auth::user()->type == 1 || Auth::user()->type == 3)
+        return view('admin.registered.index_accept',compact('seasons'));
+}
+
+if($regStatus == 'refuse'){
+    if(Auth::user()->type == 1 || Auth::user()->type == 3)
+        return view('admin.registered.index_refuse',compact('seasons'));
+}
+
+return '404';
+
+}
+
+
+public function getAllRegistereds(Request $request,$regStatus){
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+if (1) {
+
+
+if($regStatus == 'all'){
+    $data = Registered::where('season',$season)->get();
+}
+
+if($regStatus == 'accept'){
+if($season==1) {
+
+    $dataa = Registered::where('season', $season)->get();
+    $avg = array();
+    $topMembersId = array();
+    foreach ($dataa as $d) {
+        $first = ($d->ev1_percent != null) ? $d->ev1_percent : 0;
+        $second = ($d->ev2_percent != null) ? $d->ev2_percent : 0;
+        $third = ($d->ev3_percent != null) ? $d->ev3_percent : 0;
+
+        $v = ((float)$first + (float)$second + (float)$third) / 3;
+        $vv = number_format((float)$v, 2, '.', '');
+        if ($vv > 59)
+            $avg[$d->id] = $vv;
+
+    }
+
+    arsort($avg);
+    $iiii = 0;
+    foreach ($avg as $a => $value) {
+        if ($iiii == 92) {
+            break;
+        }
+        array_push($topMembersId, $a);
+        $iiii++;
+    }
+    array_push($topMembersId, 160);
+    array_push($topMembersId, 217);
+    array_push($topMembersId, 310);
+    array_push($topMembersId, 452);
+    array_push($topMembersId, 455);
+    array_push($topMembersId, 471);
+
+    $data = Registered::where('season', $season)->whereIn('id', $topMembersId)->get();
+}else{
+    $dataa = Registered::where('season',$season)->get();
+    $Evalator=User::where('season',$season)->where('type',2)->get();
+    $numberofEvalator = count($Evalator);
+    $avg = array();
+    $topMembersId = array();
+//////
+$temp= EvulatorUser::where('registered_id',485)->where('user_id',29)->get();
+        // echo $temp[0]->percent;
+    foreach($dataa as $d){
+        $memberavg=0;
+        for($i=0;$i<$numberofEvalator;$i++)
+        {$temp= EvulatorUser::where('registered_id',$d->id)->where('user_id',$Evalator[$i]->id)->first();
+            if($temp != null)
+             {
+                $memberavg += EvulatorUser::where('registered_id', $d->id)->where('user_id', $Evalator[$i]->id)->first()->percent;
+            }
+
+            }
+        $v =((float) $memberavg /$numberofEvalator);
+        $vv = number_format((float)$v, 2, '.', '');
+        $reg=Registered::findorfail($d->id);
+$reg->ev1_percent=$vv;
+$reg->save();
+
+
+        if($vv > 59)
+            $avg[$d->id] = $vv;
+
+    }
+    arsort($avg);
+///////////////////////////////////////
+    foreach($avg as $a => $value){
+$iiii=0;
+
+        if($iiii == 92){
+            break;
+        }
+        array_push($topMembersId,$a);
+        $iiii++;
+    }
+
+
+    $data = Registered::where('season',$season)->whereIn('id',$topMembersId);
+
+
+}
+}
+
+return Datatables::of($data)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->editColumn('status', function($row){
+            if($row->ev1_percent == null || $row->ev2_percent == null || $row->ev3_percent == null)
+                return 'تحت التقييم';
+            else
+                return 'تم التقييم';
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+}
+}
+
+public function destroyRegister($id){
+EvulatorUser::where('registered_id',$id)->delete();
+RefreeUser::where('registered_id',$id)->delete();
+$remove_record = Registered::where('id',$id)->delete();
+
+if($remove_record)
+return true;
+else
+return false;
+}
+
+public function change_status($uid,$status){
+$reg = Registered::where('id',$uid)->first();
+if($status == $reg->status){
+return true;
+}else{
+Registered::where('id',$uid)->update([
+        'status' => $status
+]);
+
+if($status == 1){
+
+    $usersEV = EvulatorUser::select('user_id')->get();
+    $user = User::select('id')->where('type',2)->whereNotIn('id',$usersEV)->first();
+
+    if($user){
+        EvulatorUser::create([
+            'registered_id' => $uid,
+            'user_id' => $user->id,
+            'status' => 0
+        ]);
+
+    }else{
+
+        $orderNowEV =  EvulatorUser::select('user_id',DB::raw('count(*) as total'))->groupBy('user_id')->orderBy('total', 'asc')->first();
+        EvulatorUser::create([
+            'registered_id' => $uid,
+            'user_id' => $orderNowEV->user_id,
+            'status' => 0
+        ]);
+
+    }
+
+
+}
+
+
+
+if($status == 2){
+    EvulatorUser::where('registered_id',$uid)->delete();
+}
+
+return true;
+}
+
+}
+
+
+// Evulator
+public function get_ev_reg($regStatus){
+if($regStatus == 'all'){
+    if(Auth::user()->type == 2)
+        return view('admin.evulator.index');
+}
+
+if($regStatus == 'done'){
+    if(Auth::user()->type == 2)
+        return view('admin.evulator.index_done');
+}
+
+if($regStatus == 'needEvulator'){
+    if(Auth::user()->type == 2)
+        return view('admin.evulator.index_need');
+}
+
+return '404';
+}
+
+
+public function getAllEvulatorRegistereds(Request $request,$regStatus){
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+if (1) {
+if($regStatus == 'all')
+    $evUsers = EvulatorUser::select('registered_id')->where('user_id',Auth::user()->id)->get();
+
+
+if($regStatus == 'done'){
+
+
+
+    $register = Registered::where('season',$season)->get();
+    $data=array();
+
+   $ev= EvulatorUser::where('user_id',\Illuminate\Support\Facades\Auth::user()->id)->get();
+    foreach ($register as $d) {
+        foreach ($ev as $e) {
+            ;
+
+            if ($e->registered_id==$d->id) {
+                array_push($data, Registered::where('id', $d->id)->first());
+            }
+        }
+    }
+
+    if(Auth::user()->id == 2){
+        $data = Registered::where('season',1)->whereNotNull('ev1_percent')->get();
+    }
+    if(Auth::user()->id == 3){
+        $data = Registered::where('season',1)->whereNotNull('ev2_percent')->get();
+    }
+    if(Auth::user()->id == 4){
+        $data = Registered::where('season',1)->whereNotNull('ev3_percent')->get();
+    }
+/*
+    if(Auth::user()->id == 29){
+        $data = Registered::where('season','2')->whereNotNull('ev1_percent')->get();
+    }
+    if(Auth::user()->id == 30){
+        $data = Registered::where('season',2)->whereNotNull('ev2_percent')->get();
+    }
+    if(Auth::user()->id == 31){
+        $data = Registered::where('season',2)->whereNotNull('ev3_percent')->get();
+    }
+**/
+
+
+}
+
+if($regStatus == 'need'){
+    $register = Registered::where('season',$season)->get();
+$data=array();
+    $ev= EvulatorUser::where('user_id',\Illuminate\Support\Facades\Auth::user()->id)->get();
+ $aa=array();
+    for($i=0;$i<count($ev);$i++)
+{array_push($aa,$ev[$i]->registered_id );
+}
+   $data=Registered::where('season',2)->whereNotIn('id',$aa)->get();
+
+       if(Auth::user()->id == 2){
+           $data = Registered::where('season',$season)->whereNull('ev1_percent')->get();
+       }
+       if(Auth::user()->id == 3){
+           $data = Registered::where('season',$season)->whereNull('ev2_percent')->get();
+       }
+       if(Auth::user()->id == 4){
+           $data = Registered::where('season',$season)->whereNull('ev3_percent')->get();
+       }
+
+/**
+       if(Auth::user()->id == 29){
+           $data = Registered::where('season',2)->whereNull('ev1_percent')->get();
+       }
+       if(Auth::user()->id == 30){
+           $data = Registered::where('season',2)->whereNull('ev2_percent')->get();
+       }
+       if(Auth::user()->id == 31){
+           $data = Registered::where('season',2)->whereNull('ev3_percent')->get();
+       }
+
+*/
+}
+//return error_log("sadasdas");
+
+
+return Datatables::of($data)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+}
+}
+
+public function saveEvulateUser(Request $request){
+/**
+if(Auth::user()->id == 2){
+$update = Registered::where('id',$request->reg_id)->update([
+    'ev1_percent' => $request->percent,
+    'ev1_notes' => $request->notes,
+]);
+}
+
+if(Auth::user()->id == 3){
+$update = Registered::where('id',$request->reg_id)->update([
+    'ev2_percent' => $request->percent,
+    'ev2_notes' => $request->notes,
+]
+);
+}
+
+if(Auth::user()->id == 4){
+$update = Registered::where('id',$request->reg_id)->update([
+    'ev3_percent' => $request->percent,
+    'ev3_notes' => $request->notes,
+]);
+}
+
+if(Auth::user()->id == 29){
+$update = Registered::where('id',$request->reg_id)->update([
+    'ev1_percent' => $request->percent,
+    'ev1_notes' => $request->notes,
+]);
+}
+
+if(Auth::user()->id == 30){
+$update = Registered::where('id',$request->reg_id)->update([
+        'ev2_percent' => $request->percent,
+        'ev2_notes' => $request->notes,
+    ]
+);
+}
+
+if(Auth::user()->id == 31){
+$update = Registered::where('id',$request->reg_id)->update([
+    'ev3_percent' => $request->percent,
+    'ev3_notes' => $request->notes,
+]);
+}
+**/
+
+$evulateuser=new EvulatorUser();
+$evulateuser->registered_id =$request->reg_id;
+$evulateuser->user_id  =\Illuminate\Support\Facades\Auth::user()->id;
+$evulateuser->notes =$request->notes;
+$evulateuser->percent =$request->percent;
+
+return $evulateuser->save();
+}
+public function review_evaluations(){
+$seasons=season::all();
+    if(\Illuminate\Support\Facades\Auth::user()->type==1)
+    {$temp=temp::all();
+        $season=$temp[0]->season_id;
+
+    }else
+        $season=\Illuminate\Support\Facades\Auth::user()->season;
+if($season==1)
+return view('admin.reviewEvaluations.index',compact('seasons'));
+else
+{
+    $evas=User::where('season',$season)->where('type',2)->get();
+   $regs=Registered::where('season',$season)->get();
+    return view('admin.reviewEvaluations.newEval',compact('seasons','evas','regs'));
+
+}
+}
+
+public function get_review_evaluations(Request $request){
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+
+if ($request->ajax()) {
+if(Auth::user()->type == 2)
+    $data = EvulatorUser::where('season',$season)->where('ev_status',1)->where('user_id',Auth::user()->id)->get();
+else
+    $data = Registered::where('season',$season)->get();
+return Datatables::of($data)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+}
+}
+
+// Evulator
+public function get_ref_reg($regStatus){
+if($regStatus == 'all'){
+    if(Auth::user()->type == 4)
+        return view('admin.referee.index');
+}
+
+if($regStatus == 'done'){
+    if(Auth::user()->type == 4)
+        return view('admin.referee.index_done');
+}
+
+if($regStatus == 'needEvulator'){
+    if(Auth::user()->type == 4)
+        return view('admin.referee.index_need');
+}
+
+return '404';
+}
+
+
+public function getAllRefereeRegistereds(Request $request,$regStatus){
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+if(Auth::user()->id == 6){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref1')->get();
+}
+elseif(Auth::user()->id == 7){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref2')->get();
+}
+elseif(Auth::user()->id == 8){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref3')->get();
+}
+else {
+    $refreeReggg = RefreeUser::where('season', $season)->select('registered_id')->where('ref_id', \Illuminate\Support\Facades\Auth::user()->id)->get();
+}
+
+    /*
+if(Auth::user()->id == 26){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref1')->get();
+}
+if(Auth::user()->id == 27){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref2')->get();
+}
+if(Auth::user()->id == 28){
+$refreeReggg = RefreeUser::where('season',$season)->select('registered_id')->whereNotNull('ref3')->get();
+}
+*/
+
+if (1) {
+if($regStatus == 'needEvulator')
+{$dataa = Registered::where('season',$season)->get();
+    $Evalator=User::where('season',$season)->where('type',2)->get();
+    $numberofEvalator = count($Evalator);
+    $avg = array();
+    $topMembersId = array();
+//////
+$temp= EvulatorUser::where('registered_id',485)->where('user_id',29)->get();
+        // echo $temp[0]->percent;
+    foreach($dataa as $d){
+        $memberavg=0;
+        for($i=0;$i<$numberofEvalator;$i++)
+        {$temp= EvulatorUser::where('registered_id',$d->id)->where('user_id',$Evalator[$i]->id)->first();
+            if($temp != null)
+             {
+                $memberavg += EvulatorUser::where('registered_id', $d->id)->where('user_id', $Evalator[$i]->id)->first()->percent;
+            }
+
+            }
+        $v =((float) $memberavg /$numberofEvalator);
+        $vv = number_format((float)$v, 2, '.', '');
+        if($vv > 59)
+            $avg[$d->id] = $vv;
+
+    }
+    arsort($avg);
+///////////////////////////////////////
+    foreach($avg as $a => $value){
+$iiii=0;
+
+        if($iiii == 92){
+            break;
+        }
+        array_push($topMembersId,$a);
+        $iiii++;
+    }
+
+
+
+$data = Registered::where('season',$season)->whereIn('id',$topMembersId)->whereNotIn('id',$refreeReggg)->get();
+}
+
+if($regStatus == 'done'){
+
+
+    if($season ==1 )
+{ $dataa = Registered::where('season',$season)->get();
+    $avg = array();
+    $topMembersId = array();
+    foreach($dataa as $d){
+        $first = ($d->ev1_percent != null) ? $d->ev1_percent : 0;
+        $second = ($d->ev2_percent != null) ? $d->ev2_percent : 0;
+        $third = ($d->ev3_percent != null) ? $d->ev3_percent : 0;
+
+        $v = ((float)$first+(float)$second+(float)$third)/3;
+        $vv = number_format((float)$v, 2, '.', '');
+        if($vv > 59)
+            $avg[$d->id] = $vv;
+    }
+    arsort($avg);
+    $iiii = 0;
+    foreach($avg as $a => $value) {
+        if ($iiii == 92) {
+            break;
+        }
+        array_push($topMembersId, $a);
+        $iiii++;
+    }   }
+else{
+    $dataa = Registered::where('season',$season)->get();
+    $Evalator=User::where('season',$season)->where('type',2)->get();
+    $numberofEvalator = count($Evalator);
+    $avg = array();
+    $topMembersId = array();
+//////
+    $temp= EvulatorUser::where('registered_id',485)->where('user_id',29)->get();
+    // echo $temp[0]->percent;
+    foreach($dataa as $d){
+        $memberavg=0;
+        for($i=0;$i<$numberofEvalator;$i++)
+        {$temp= EvulatorUser::where('registered_id',$d->id)->where('user_id',$Evalator[$i]->id)->first();
+            if($temp != null)
+            {
+                $memberavg += EvulatorUser::where('registered_id', $d->id)->where('user_id', $Evalator[$i]->id)->first()->percent;
+            }
+
+        }
+        $v =((float) $memberavg /$numberofEvalator);
+        $vv = number_format((float)$v, 2, '.', '');
+        if($vv > 59)
+            $avg[$d->id] = $vv;
+
+    }
+    arsort($avg);
+///////////////////////////////////////
+    foreach($avg as $a => $value){
+        $iiii=0;
+
+        if($iiii == 92){
+            break;
+        }
+        array_push($topMembersId,$a);
+        $iiii++;
+    }
+
+
+}
+
+
+    $data = Registered::where('season',$season)->whereIn('id',$topMembersId)->whereIn('id',$refreeReggg)->get();
+
+
+
+
+
+
+
+
+
+}
+
+return Datatables::of($data)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+}
+}
+
+public function saveRefereeUser(Request $request,$id){
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+$check = RefreeUser::where('registered_id',$id)->first();
+
+if($check){
+        if(Auth::user()->id == 6){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref1')->count();
+            if($check < 35){
+                RefreeUser::where('registered_id',$id)->update([
+                    'ref1' => 'done',
+                'season'=>1,
+                ]);
+            }
+
+        }
+
+       elseif(Auth::user()->id == 7){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref2')->count();
+            if($check < 35){
+                RefreeUser::where('registered_id',$id)->update([
+                    'ref2' => 'done',
+                'season'=>1,
+                ]);
+            }
+        }
+       elseif(Auth::user()->id == 8){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref3')->count();
+            if($check < 35){
+                RefreeUser::where('registered_id',$id)->update([
+                    'ref3' => 'done',
+                'season'=>1,
+
+                ]);
+            }
+        }
+
+
+/**
+if(Auth::user()->id == 26){
+    $check = RefreeUser::where('season',2)->whereNotNull('ref1')->count();
+    if($check < 35){
+        RefreeUser::where('registered_id',$id)->update([
+            'ref1' => 'done',
+            'season'=>2,
+        ]);
+    }
+
+}
+
+if(Auth::user()->id == 27){
+    $check = RefreeUser::where('season',2)->whereNotNull('ref2')->count();
+    if($check < 35){
+        RefreeUser::where('registered_id',$id)->update([
+            'ref2' => 'done',
+            'season'=>2,
+        ]);
+    }
+}
+if(Auth::user()->id == 28){
+    $check = RefreeUser::where('season',2)->whereNotNull('ref3')->count();
+    if($check < 35){
+        RefreeUser::where('registered_id',$id)->update([
+            'ref3' => 'done',
+                                'season'=>2,
+
+        ]);
+    }
+}
+*/
+
+
+    else{
+    $check = RefreeUser::where('season',$season)->where("ref_id",\Illuminate\Support\Facades\Auth::user()->id)->count();
+    if($check < 35){
+
+        RefreeUser::create([
+            'registered_id' => $id,
+            'ref_id' =>\Illuminate\Support\Facades\Auth::user()->id,
+            'season'=>$season
+
+        ]);
+
+    }
+
+
+}
+
+}else{
+        if(Auth::user()->id == 6){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref1')->count();
+            if($check < 35){
+                RefreeUser::create([
+                    'registered_id' => $id,
+                    'ref1' => 'done',
+                    'season'=>1
+
+                ]);
+            }
+        }
+
+        elseif(Auth::user()->id == 7){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref2')->count();
+            if($check < 35){
+                RefreeUser::create([
+                    'registered_id' => $id,
+                    'ref2' => 'done',
+                    'season'=>1
+
+                ]);
+            }
+        }
+        elseif(Auth::user()->id == 8){
+            $check = RefreeUser::where('season',1)->whereNotNull('ref3')->count();
+            if($check < 35){
+                RefreeUser::create([
+                    'registered_id' => $id,
+                    'ref3' => 'done',
+                    'season'=>1
+
+                ]);
+            }
+        }
+
+        else {
+            $check = RefreeUser::where('season', $season)->where("ref_id", \Illuminate\Support\Facades\Auth::user()->id)->count();
+            if ($check < 35) {
+
+                RefreeUser::create([
+                    'registered_id' => $id,
+                    'ref_id' => \Illuminate\Support\Facades\Auth::user()->id,
+                    'season' => $season
+
+                ]);
+
+            }
+
+
+        }
+
+
+}
+
+
+
+return true;
+
+}
+
+public function saveRefereeUserDelete(Request $request,$id)
+{
+if(Auth::user()->id == 6){
+RefreeUser::where('registered_id',$id)->update([
+    'ref1' => null
+]);
+}
+
+elseif(Auth::user()->id == 7){
+RefreeUser::where('registered_id',$id)->update([
+    'ref2' => null
+]);
+}
+elseif(Auth::user()->id == 8){
+RefreeUser::where('registered_id',$id)->update([
+    'ref3' => null
+]);
+}
+else {
+    RefreeUser::where('registered_id', $id)->where('ref_id', \Illuminate\Support\Facades\Auth::user()->id)->delete();
+}
+    return true;
+
+}
+
+public function review_ref_evaluations(){
+$seasons=season::all();
+
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+$refs = User::where('season',$season)->where('type',4)->get();
+
+return view('admin.reviewRefEvaluations.index',compact('refs','seasons'));
+}
+
+public function get_review_ref_evaluations(Request $request){
+    if(\Illuminate\Support\Facades\Auth::user()->type==1)
+    {$temp=temp::all();
+        $season=$temp[0]->season_id;
+
+    }else
+        $season=\Illuminate\Support\Facades\Auth::user()->season;
+
+
+    if ($request->ajax()) {
+
+$data = RefreeUser::where('season',$season)->where('registered_id','!=',null)->get();
+return Datatables::of($data)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->addColumn('name', function($row){
+           $reg = Registered::where('id',$row->registered_id)->first();
+           return $reg->name;
+    })
+    ->addColumn('email', function($row){
+           $reg = Registered::where('id',$row->registered_id)->first();
+           return $reg->email;
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+}
+}
+public function participants(){
+$seasons=season::all();
+return view('admin.participants.index',compact('seasons'));
+}
+
+public function all_participants(Request $request){
+// if ($request->ajax()) {
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+$data = FinalResult::where('season',$season)->get();
+$ids = array();
+foreach($data as $d)
+{
+    array_push($ids,$d->registered_id);
+}
+
+$dataa = Registered::whereIn('id',$ids)->get();
+return Datatables::of($dataa)
+    ->addColumn('action', function($row){
+        $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+        return $actionBtn;
+    })
+    ->rawColumns(['action'])
+    ->make(true);
+// }
+}
+
+public function generate_link_view($id)
+{
+return view('generate_link_view',['seasons'=>season::all()]);
+}
+
+public function generate_link(Request $request,$id)
+{
+$token = Str::random(70);
+$member = Registered::where('id',$id)->update([
+'random_token' => $token
+]);
+
+$m = Registered::where('id',$id)->first();
+
+$link = url('/re-upload'.'/'.$token);
+$data = array('memberEmail' => $m->email,'link' => $link,'note' => $request->note);
+
+Mail::send('email.reUpload',$data,function($m) use($data){
+$m->from('registration@alrayapoet.com');
+$m->to($data['memberEmail'])->subject('Update Information!');
+});
+
+return redirect()->back();
+
+}
+
+public function reUploadView($token)
+{
+$member = Registered::where('random_token',$token)->first();
+if($member)
+return view('reUploadView');
+else
+return abort(403);
+}
+
+public function saveReUpload(Request $request,$token)
+{
+$update = Registered::where('random_token',$token)->update([
+'video' => $request->video,
+'random_token' => null
+]);
+
+if($update)
+return true;
+else
+return false;
+}
+
+public function qualifiedView($type){
+$seasons=season::all();
+if($type == 'khaild'){
+$refree = 'خالد المريخي';
+return view('admin.qualified',compact('refree','seasons'));
+}
+
+if($type == 'nasser'){
+$refree = 'ناصر السبيعي';
+return view('admin.qualified',compact('refree','seasons'));
+}
+
+
+if($type == 'naif'){
+$refree = 'نايف صقر';
+return view('admin.qualified',compact('refree','seasons'));
+}
+
+if($type == 'all'){
+$refree = 'المستركين بين جميع الحكام';
+return view('admin.qualified',compact('refree','seasons'));
+}
+$refree = User::where("id",$type)->first()->name;
+return view('admin.qualified',compact('refree','seasons'));
+
+
+}
+
+public function qualifiedData($type)
+{ $data =array();
+if(\Illuminate\Support\Facades\Auth::user()->type==1)
+{$temp=temp::all();
+$season=$temp[0]->season_id;
+
+}else
+$season=\Illuminate\Support\Facades\Auth::user()->season;
+
+if($type == '6'){
+$data = RefreeUser::where('season',$season)->where('ref1','!=',NULL)->get();
+}
+
+elseif($type == '7'){
+$data = RefreeUser::where('season',$season)->whereNotNull('ref2')->get();
+}
+
+
+elseif($type == '8'){
+$data = RefreeUser::where('season',$season)->whereNotNull('ref3')->get();
+}
+
+elseif($type == 'all'){
+$data = RefreeUser::where('season',$season)->whereNotNull('ref1')->whereNotNull('ref2')->whereNotNull('ref3')->get();
+}
+else{
+
+    $data = RefreeUser::where('season',$season)->where('ref_id',$type)->get();
+
+
+
+}
+
+$ids = array();
+foreach($data as $d){
+array_push($ids,$d->registered_id);
+}
+
+$dataa  = Registered::where('id',$ids)->get();
+//return $dataa;
+return Datatables::of($dataa)
+->addColumn('action', function($row){
+    $actionBtn = '<a href="javascript:void(0)" class="edit btn btn-success btn-sm">Edit</a> <a href="javascript:void(0)" class="delete btn btn-danger btn-sm">Delete</a>';
+    return $actionBtn;
+})
+->rawColumns(['action'])
+->make(true);
+
+}
+
+
+public function saveFinal(Request $request,$id)
+{
+    if(\Illuminate\Support\Facades\Auth::user()->type==1)
+    {$temp=temp::all();
+        $season=$temp[0]->season_id;
+
+    }else
+        $season=\Illuminate\Support\Facades\Auth::user()->season;
+
+
+    $check = FinalResult::where('registered_id',$id)->first();
+if(!$check){
+FinalResult::create([
+"registered_id" => $id,
+"season"=>$season
+]);
+}
+return true;
+
+}
+
+public function saveFinalDel(Request $request,$id)
+{
+FinalResult::where('registered_id',$id)->delete();
+
+return true;
+}
+}
